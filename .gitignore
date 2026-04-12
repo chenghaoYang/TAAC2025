@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+*.pt
+*.ckpt
+*.bin
+data/
+notes/

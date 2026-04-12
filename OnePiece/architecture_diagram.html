@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OnePiece Architecture — TAAC2025 9th Place + Tech Innovation Award</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --c-bg: #f8fafc;
+      --c-canvas: #ffffff;
+      --c-border: #cbd5e1;
+      --c-text-main: #0f172a;
+      --c-text-sub: #64748b;
+      --c-accent-train: #1e40af;
+      --c-accent-infer: #047857;
+      --c-accent-data: #6d28d9;
+      --c-accent-model: #b91c1c;
+      --c-accent-moe: #a16207;
+      --c-accent-sid: #0d9488;
+      --c-accent-loss: #be185d;
+      --c-accent-feat: #4338ca;
+      --c-accent-dist: #0369a1;
+      --font-ui: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--c-bg);
+      font-family: var(--font-ui);
+      color: var(--c-text-main);
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+    }
+    .diagram-canvas {
+      background: var(--c-canvas);
+      border: 2px solid var(--c-text-main);
+      padding: 0;
+      max-width: 1300px;
+      width: 100%;
+    }
+    .diagram-header {
+      border-bottom: 3px solid var(--c-text-main);
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .diagram-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .diagram-header .subtitle { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--c-text-sub); margin-top: 2px; }
+    .header-meta { font-family: var(--font-mono); font-size: 10px; color: var(--c-text-sub); text-align: right; line-height: 1.6; }
+    .section { border-bottom: 1px solid var(--c-border); padding: 20px 32px; }
+    .section:last-child { border-bottom: none; }
+    .section-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--c-text-sub); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .section-label::before { content: ''; display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; }
+    .section-label.feat { color: var(--c-accent-feat); }
+    .section-label.data { color: var(--c-accent-data); }
+    .section-label.model { color: var(--c-accent-model); }
+    .section-label.moe { color: var(--c-accent-moe); }
+    .section-label.sid { color: var(--c-accent-sid); }
+    .section-label.loss { color: var(--c-accent-loss); }
+    .section-label.train { color: var(--c-accent-train); }
+    .section-label.infer { color: var(--c-accent-infer); }
+    .section-label.dist { color: var(--c-accent-dist); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+    .grid-5 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 10px; }
+    .component { border: 1px solid var(--c-border); padding: 10px 14px; font-size: 12px; }
+    .component .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text-sub); margin-bottom: 6px; font-weight: 500; }
+    .component .value { font-family: var(--font-mono); font-size: 11px; line-height: 1.5; }
+    .component.highlight { border-color: var(--c-text-main); border-width: 2px; }
+    .component.highlight .label { color: var(--c-text-main); }
+    .pipeline { display: flex; align-items: stretch; gap: 0; }
+    .pipeline-stage { flex: 1; border: 1px solid var(--c-border); padding: 12px 14px; position: relative; display: flex; flex-direction: column; justify-content: flex-start; }
+    .pipeline-stage .stage-num { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+    .pipeline-stage .stage-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+    .pipeline-stage .stage-detail { font-family: var(--font-mono); font-size: 10px; color: var(--c-text-sub); line-height: 1.6; }
+    .pipeline-arrow { display: flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; }
+    .pipeline-arrow svg { width: 20px; height: 20px; }
+    .badge { display: inline-block; border: 1px solid var(--c-border); padding: 1px 6px; font-size: 9px; font-family: var(--font-mono); margin-right: 3px; margin-bottom: 2px; }
+    .badge.dark { background: var(--c-text-main); color: white; border-color: var(--c-text-main); }
+    .model-flow { display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr; align-items: center; gap: 0; }
+    .model-block { border: 2px solid var(--c-border); padding: 10px 12px; }
+    .model-block .mb-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text-sub); margin-bottom: 4px; }
+    .model-block .mb-value { font-family: var(--font-mono); font-size: 10px; line-height: 1.6; }
+    .model-block.accent-feat { border-color: var(--c-accent-feat); }
+    .model-block.accent-model { border-color: var(--c-accent-model); }
+    .model-block.accent-moe { border-color: var(--c-accent-moe); }
+    .model-block.accent-sid { border-color: var(--c-accent-sid); }
+    .model-block.accent-loss { border-color: var(--c-accent-loss); }
+    .arrow-cell { display: flex; align-items: center; justify-content: center; }
+    .arrow-cell svg { width: 24px; height: 24px; }
+    .transformer-stack { display: flex; flex-direction: column; gap: 2px; border: 2px solid var(--c-accent-model); padding: 10px; }
+    .tf-row { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; padding: 4px 8px; border: 1px solid var(--c-border); }
+    .tf-row .tf-op { font-weight: 500; min-width: 180px; }
+    .tf-row .tf-note { color: var(--c-text-sub); font-size: 9px; }
+    .tf-bracket { font-size: 10px; color: var(--c-text-sub); font-family: var(--font-mono); text-align: center; padding: 2px 0; }
+    .feat-table { width: 100%; border-collapse: collapse; font-size: 10px; font-family: var(--font-mono); }
+    .feat-table th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text-sub); padding: 4px 8px; border-bottom: 1px solid var(--c-text-main); font-weight: 500; }
+    .feat-table td { padding: 3px 8px; border-bottom: 1px solid var(--c-border); vertical-align: top; }
+    .connector-down { display: flex; justify-content: center; padding: 6px 0; }
+    .connector-down svg { width: 16px; height: 24px; }
+    .dim-flow { display: flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 10px; flex-wrap: wrap; }
+    .dim-box { border: 1px solid var(--c-border); padding: 2px 6px; font-size: 10px; }
+    .dim-plus { color: var(--c-text-sub); font-size: 11px; }
+    .dim-arrow { color: var(--c-text-sub); font-size: 10px; }
+    .dim-result { border: 2px solid var(--c-text-main); padding: 2px 6px; font-weight: 500; }
+    .inner-box { border: 1px solid var(--c-border); padding: 10px 12px; }
+    .inner-box .ib-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text-sub); margin-bottom: 6px; font-weight: 500; }
+    .inner-box .ib-content { font-family: var(--font-mono); font-size: 10px; line-height: 1.7; }
+    .legend { display: flex; gap: 20px; padding: 12px 0 0 0; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+    .legend-swatch { width: 14px; height: 14px; border: 2px solid; }
+    .legend-swatch.feat { border-color: var(--c-accent-feat); }
+    .legend-swatch.data { border-color: var(--c-accent-data); }
+    .legend-swatch.model { border-color: var(--c-accent-model); }
+    .legend-swatch.moe { border-color: var(--c-accent-moe); }
+    .legend-swatch.sid { border-color: var(--c-accent-sid); }
+    .legend-swatch.loss { border-color: var(--c-accent-loss); }
+    .legend-swatch.train { border-color: var(--c-accent-train); }
+    .legend-swatch.infer { border-color: var(--c-accent-infer); }
+    .legend-swatch.dist { border-color: var(--c-accent-dist); }
+    .vs-badge { display: inline-block; background: var(--c-text-main); color: white; font-size: 9px; font-weight: 700; padding: 2px 8px; margin-bottom: 6px; letter-spacing: 0.08em; }
+    .ablation-table { width: 100%; border-collapse: collapse; font-size: 10px; font-family: var(--font-mono); }
+    .ablation-table th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text-sub); padding: 4px 8px; border-bottom: 1px solid var(--c-text-main); font-weight: 500; }
+    .ablation-table td { padding: 3px 8px; border-bottom: 1px solid var(--c-border); }
+    .ablation-table .positive { color: var(--c-accent-infer); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="diagram-canvas">
+
+    <!-- ===== HEADER ===== -->
+    <div class="diagram-header">
+      <div>
+        <h1>OnePiece — Generative Recommendation with SID Beam Search</h1>
+        <div class="subtitle">TAAC2025 9th Place + Tech Innovation Award · HSTU/MoE + RoPE + InfoNCE + Muon</div>
+      </div>
+      <div class="header-meta">
+        Model: BaselineModel (OnePiece)<br>
+        Hidden: 512/1024d · Blocks: 8-24 · Heads: 8<br>
+        MoE: 64E-3K-1S · SID: 2-layer Beam Search<br>
+        Score: 0.1371 (best single) · Metric: Weighted NDCG@10
+      </div>
+    </div>
+
+    <!-- ===== 1. FEATURE ENGINEERING ===== -->
+    <div class="section">
+      <div class="section-label feat">01 — FEATURE ENGINEERING (dataset.py + item_exposure_data.py + timestamp_buckets.py)</div>
+
+      <div class="grid-4">
+        <div class="component highlight">
+          <div class="label">Next Action Type</div>
+          <div class="value">action_type: 0/1/2<br>(exposure/click/conv)<br>Mask post-May31 exposure<br>=> focus on click+conv<br><span style="color:var(--c-accent-infer)">+0.2% ablation</span></div>
+        </div>
+        <div class="component highlight">
+          <div class="label">Time Features</div>
+          <div class="value">time_diff: day(32)/hour(24)/min(60)<br>date: year(100)/month(12)/day(31)<br>Absolute time crucial:<br>items phase in/out rapidly<br><span style="color:var(--c-accent-infer)">+0.5% ablation</span></div>
+        </div>
+        <div class="component highlight">
+          <div class="label">Lifecycle + Hotness</div>
+          <div class="value">exposure_start/end: year/month/day<br>timestamp_bucket_id: 8192 buckets<br>hot_bucket_1000: percentile rank<br>Items have pulse-like lifespan<br><span style="color:var(--c-accent-infer)">key insight</span></div>
+        </div>
+        <div class="component highlight">
+          <div class="label">Semantic ID</div>
+          <div class="value">2-layer hierarchical KMeans<br>on model itemdnn embeddings<br>Collision-free reallocation<br>top-50 similarity fallback<br><span style="color:var(--c-accent-infer)">mm_emb: 7M conflicts<br>model emb: 200K conflicts</span></div>
+        </div>
+      </div>
+
+      <div style="height: 10px;"></div>
+
+      <table class="feat-table">
+        <tr>
+          <th>Feature Group</th>
+          <th>IDs / Fields</th>
+          <th>Processing</th>
+          <th>Category</th>
+        </tr>
+        <tr>
+          <td>Item Sparse (base)</td>
+          <td>100-102, 112, 114-122</td>
+          <td>Embedding(vocab, hidden) → lookup</td>
+          <td>item_sparse</td>
+        </tr>
+        <tr>
+          <td>Context Item Sparse</td>
+          <td>action_type, next_action_type, time_diff_*, timestamp_bucket_*, hot_bucket_1000</td>
+          <td>Custom vocab → Embedding lookup</td>
+          <td>context_item_sparse</td>
+        </tr>
+        <tr>
+          <td>Item ID Hash</td>
+          <td>item_id % 2M, item_id % 3M</td>
+          <td>2× Embedding(prime, 256) → concat</td>
+          <td>hash compression</td>
+        </tr>
+        <tr>
+          <td>User Sparse + Array</td>
+          <td>103-105, 109 / 106-108, 110</td>
+          <td>Embedding → lookup / sum</td>
+          <td>user_sparse / user_array</td>
+        </tr>
+        <tr>
+          <td>MM Embeddings</td>
+          <td>81-86 (dims: 32~4096)</td>
+          <td>Linear(orig, hidden) or Gating mechanism</td>
+          <td>item_emb</td>
+        </tr>
+        <tr>
+          <td>SID Features</td>
+          <td>sid_0, sid_1</td>
+          <td>Embedding(codebook_size, hidden)</td>
+          <td>context_item_sparse</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ===== CONNECTOR ===== -->
+    <div class="connector-down">
+      <svg viewBox="0 0 16 24" fill="none" stroke="#0f172a" stroke-width="1.5">
+        <line x1="8" y1="0" x2="8" y2="18"/><polyline points="3,14 8,20 13,14"/>
+      </svg>
+    </div>
+
+    <!-- ===== 2. MODEL: DUAL-PATH EMBEDDING ===== -->
+    <div class="section">
+      <div class="section-label model">02 — DUAL-PATH ITEM DNN EMBEDDING (model.py — feat2emb)</div>
+
+      <div class="grid-2">
+        <div class="inner-box">
+          <div class="ib-label">Item Feature Pipeline (include_user=False)</div>
+          <div class="ib-content">
+            <div class="dim-flow">
+              <div class="dim-box">item_emb(ID) → 32d</div>
+              <span class="dim-plus">+</span>
+              <div class="dim-box">hash_emb_a(ID%2M) → 256d</div>
+              <span class="dim-plus">+</span>
+              <div class="dim-box">hash_emb_b(ID%3M) → 256d</div>
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="dim-plus">+</span> 13× sparse_emb → hidden each
+              <span class="dim-plus">+</span> context_sparse → hidden each
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="dim-plus">+</span> 6× mm_emb × Linear → hidden (or Gated)
+            </div>
+            <div style="margin-top: 6px;">
+              <span class="dim-arrow">→ concat → itemdnn(Linear) → <b>NO ReLU</b></span>
+            </div>
+            <div style="margin-top: 4px;">
+              <div class="dim-result">→ hidden_dim candidate embedding (asymmetric)</div>
+            </div>
+          </div>
+        </div>
+        <div class="inner-box">
+          <div class="ib-label">Sequence Feature Pipeline (include_user=True)</div>
+          <div class="ib-content">
+            <div class="dim-flow">
+              <div class="dim-box">item_emb(ID) → 32d</div>
+              <span class="dim-plus">+</span>
+              <div class="dim-box">hash_emb_a → 256d</div>
+              <span class="dim-plus">+</span>
+              <div class="dim-box">hash_emb_b → 256d</div>
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="dim-plus">+</span> all item/user sparse + array + context
+            </div>
+            <div style="margin-top: 6px;">
+              <span class="dim-arrow">→ item: itemdnn → <b>ReLU</b></span>
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="dim-arrow">→ user: userdnn → ReLU</span>
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="dim-arrow">→ seqs_emb = item_repr + user_repr</span>
+            </div>
+            <div style="margin-top: 6px;">
+              <div class="dim-result">Asymmetric: Query=ReLU, Key=No ReLU → cosine ∈ [-1,1]</div>
+            </div>
+            <div style="margin-top: 2px; font-size: 9px; color: var(--c-accent-infer);">
+              Ablation: 0.0967 → 0.0997 (+3.1%)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="height: 10px;"></div>
+
+      <div class="inner-box">
+        <div class="ib-label">MM Embedding Gating Mechanism (optional)</div>
+        <div class="ib-content">
+          Gate input = concat(item_sparse_embs + mm_emb_raw) → Linear → Softmax<br>
+          Output = Σ(score_i × [item_base_emb, mm_emb_1, ..., mm_emb_6])<br>
+          Learns to weight: item_id vs each mm_emb source per position
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CONNECTOR ===== -->
+    <div class="connector-down">
+      <svg viewBox="0 0 16 24" fill="none" stroke="#0f172a" stroke-width="1.5">
+        <line x1="8" y1="0" x2="8" y2="18"/><polyline points="3,14 8,20 13,14"/>
+      </svg>
+    </div>
+
+    <!-- ===== 3. SEQUENCE ENCODER ===== -->
+    <div class="section">
+      <div class="section-label model">03 — SEQUENCE ENCODER (log2feats) — 3 Architecture Options</div>
+
+      <div class="grid-3">
+        <!-- Option A: Transformer -->
+        <div class="inner-box" style="border-color: var(--c-accent-model);">
+          <div class="vs-badge">A — TRANSFORMER</div>
+          <div class="ib-content">
+            <div style="margin-top:4px;">
+              <div style="font-size:9px;color:var(--c-text-sub);margin-bottom:4px;">Pre-LN + RoPE</div>
+              LayerNorm(x)<br>
+              → FlashMHA(Q,K,V, causal_mask)<br>
+              → + Residual<br>
+              → LayerNorm<br>
+              → PointWiseFFN<br>
+              → + Residual<br>
+              <br>
+              RoPE: rotary position on Q,K<br>
+              + rel_pos_bias Embedding<br>
+              Score: 0.0789 (base)
+            </div>
+          </div>
+        </div>
+
+        <!-- Option B: HSTU -->
+        <div class="inner-box" style="border-color: var(--c-accent-moe);">
+          <div class="vs-badge">B — HSTU</div>
+          <div class="ib-content">
+            <div style="margin-top:4px;">
+              <div style="font-size:9px;color:var(--c-text-sub);margin-bottom:4px;">Unified Block (Meta GRADE)</div>
+              f1_linear(x) → SiLU → split U,Q,K,V<br>
+              <br>
+              Scores = QKᵀ/√d + RAB<br>
+              Weights = <b>SiLU(Scores)</b> (NOT Softmax!)<br>
+              → mask → Dropout → AttnOut<br>
+              <br>
+              Output = f2(AttnOut ⊙ U) // gating<br>
+              + Residual<br>
+              <br>
+              12L-512d: 0.1257<br>
+              12L-1024d: <b>0.1371</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- Option C: MoE -->
+        <div class="inner-box" style="border-color: var(--c-accent-moe);">
+          <div class="vs-badge">C — DEEPSEEK MOE</div>
+          <div class="ib-content">
+            <div style="margin-top:4px;">
+              <div style="font-size:9px;color:var(--c-text-sub);margin-bottom:4px;">64 Experts, Top-3 + 1 Shared</div>
+              MHA (same as Transformer)<br>
+              → + Residual<br>
+              → MoE Block:<br>
+              &nbsp;&nbsp;Gate(x) → softmax → top-3 experts<br>
+              &nbsp;&nbsp;Routed: Σ wᵢ·Eᵢ(x)<br>
+              &nbsp;&nbsp;+ Shared: Eₛ(x)<br>
+              → + Residual<br>
+              <br>
+              Load Balance: Aux Loss or Bias<br>
+              8L-512d-64E: 0.1300
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="height: 10px;"></div>
+
+      <div class="inner-box">
+        <div class="ib-label">Attention Mask + Position Encoding</div>
+        <div class="ib-content">
+          Causal: lower-triangular (auto-regressive) AND Padding: mask != 0<br>
+          RoPE (Transformer/MoE): rotary on Q,K + learned rel_pos_bias<br>
+          HSTU: learned relative attention bias (RAB) only, NO RoPE<br>
+          next_action_type_emb: appended to seq (3 dims: exposure/click/conv)<br>
+          Masking: ranking_loss_mask=0 for post-May31 positions (data leakage fix)
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CONNECTOR ===== -->
+    <div class="connector-down">
+      <svg viewBox="0 0 16 24" fill="none" stroke="#0f172a" stroke-width="1.5">
+        <line x1="8" y1="0" x2="8" y2="18"/><polyline points="3,14 8,20 13,14"/>
+      </svg>
+    </div>
+
+    <!-- ===== 4. SID PREDICTION HEAD ===== -->
+    <div class="section">
+      <div class="section-label sid">04 — SID PREDICTION HEAD (model.py — beamsearch_sid)</div>
+
+      <div class="pipeline">
+        <div class="pipeline-stage" style="border-color: var(--c-accent-sid);">
+          <div class="stage-num" style="color: var(--c-accent-sid);">Step 1</div>
+          <div class="stage-title">SID1 Prediction</div>
+          <div class="stage-detail">
+            log_feats → HSTU self-attn<br>
+            → LayerNorm<br>
+            → Projection(codebook_size)<br>
+            → LogSoftmax<br>
+            → Top-B beams<br>
+            (B = beam width, e.g. 5)
+          </div>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 20 20" fill="none" stroke="#64748b" stroke-width="1.5">
+            <line x1="0" y1="10" x2="14" y2="10"/><polyline points="10,5 16,10 10,15"/>
+          </svg>
+        </div>
+        <div class="pipeline-stage" style="border-color: var(--c-accent-sid);">
+          <div class="stage-num" style="color: var(--c-accent-sid);">Step 2</div>
+          <div class="stage-title">SID2 Query Construction</div>
+          <div class="stage-detail">
+            For each beam j:<br>
+            e₁ⱼ = SID_Embedding(s1ⱼ)<br>
+            q₂ⱼ = Linear(concat(e₁ⱼ, log_feats[:, -1, :]))<br>
+            <br>
+            Multi-layer cross-attn:<br>
+            q₂ⱼ → HSTU cross-attn with<br>
+            all_seq_logfeats as K,V
+          </div>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 20 20" fill="none" stroke="#64748b" stroke-width="1.5">
+            <line x1="0" y1="10" x2="14" y2="10"/><polyline points="10,5 16,10 10,15"/>
+          </svg>
+        </div>
+        <div class="pipeline-stage" style="border-color: var(--c-accent-sid);">
+          <div class="stage-num" style="color: var(--c-accent-sid);">Step 3</div>
+          <div class="stage-title">Beam Search Merge</div>
+          <div class="stage-detail">
+            Score(s1ⱼ, sk) =<br>
+              log P(s1ⱼ) + log P(sk|s1ⱼ)<br>
+            <br>
+            Top-K₂ (e.g. 384) from<br>
+            B × codebook_size combos<br>
+            → C_sid candidate set<br>
+            → reverse lookup → item IDs
+          </div>
+        </div>
+      </div>
+
+      <div style="height: 8px;"></div>
+      <div class="inner-box">
+        <div class="ib-label">SID Training Loss</div>
+        <div class="ib-content">
+          L_SID1 = CrossEntropy(SID1_logits, y_sid1) — uses log_feats as Q,K,V<br>
+          L_SID2 = CrossEntropy(SID2_logits, y_sid2) — uses SID1_embedding + log_feats as Q<br>
+          Teacher forcing: training uses ground-truth SID1 to construct SID2 query<br>
+          Inference: uses predicted SID1 (beam search) for SID2 query
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CONNECTOR ===== -->
+    <div class="connector-down">
+      <svg viewBox="0 0 16 24" fill="none" stroke="#0f172a" stroke-width="1.5">
+        <line x1="8" y1="0" x2="8" y2="18"/><polyline points="3,14 8,20 13,14"/>
+      </svg>
+    </div>
+
+    <!-- ===== 5. LOSS FUNCTIONS ===== -->
+    <div class="section">
+      <div class="section-label loss">05 — LOSS FUNCTIONS (utils.py + model.py)</div>
+
+      <div class="grid-3">
+        <div class="inner-box" style="border-color: var(--c-accent-loss);">
+          <div class="ib-label">InfoNCE with LogQ Debiasing</div>
+          <div class="ib-content">
+            L = -log( exp(sim(q,k⁺)/τ - logq(k⁺)) / Σ exp(sim(q,kⱼ)/τ - logq(kⱼ)) )<br>
+            <br>
+            In-Batch Negatives: other users' pos items<br>
+            LogQ: log(count(item)/total) correction<br>
+            Similarity: cosine (F.normalize) > dot product<br>
+            Temp τ = 0.02 (fixed, better than learnable)<br>
+            <br>
+            <span style="color:var(--c-accent-infer)">Without LogQ: 0.0378<br>With LogQ: 0.0949 (+150%)</span>
+          </div>
+        </div>
+        <div class="inner-box" style="border-color: var(--c-accent-sid);">
+          <div class="ib-label">SID Cross-Entropy Loss</div>
+          <div class="ib-content">
+            L_SID1 = CE(SID1_logits, y_sid1)<br>
+            L_SID2 = CE(SID2_logits, y_sid2)<br>
+            <br>
+            Applied only on loss_mask positions<br>
+            (where next_token_type == 1)<br>
+            <br>
+            Monitors: SID Hit@10 for both levels<br>
+            SID2 easier than SID1 (limited combos)
+          </div>
+        </div>
+        <div class="inner-box" style="border-color: var(--c-accent-train);">
+          <div class="ib-label">Total Loss</div>
+          <div class="ib-content">
+            L_total = L_InfoNCE + α·L_SID1 + β·L_SID2<br>
+            <br>
+            Optional: Reward Model Loss<br>
+            → EnhancedSortMLP(HSTU cross-attn)<br>
+            → BCE on CTR label<br>
+            weighted by cos_sim × p_ctr<br>
+            <br>
+            + MoE Aux Loss (if MoE enabled)<br>
+            + Weight Decay (1e-5)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CONNECTOR ===== -->
+    <div class="connector-down">
+      <svg viewBox="0 0 16 24" fill="none" stroke="#0f172a" stroke-width="1.5">
+        <line x1="8" y1="0" x2="8" y2="18"/><polyline points="3,14 8,20 13,14"/>
+      </svg>
+    </div>
+
+    <!-- ===== 6. TRAINING ===== -->
+    <div class="section">
+      <div class="section-label train">06 — TRAINING (main_dist.py + utils.py)</div>
+
+      <div class="grid-3">
+        <div class="component highlight">
+          <div class="label">Optimizer: Muon + AdamW</div>
+          <div class="value">Muon (weight matrices):<br>lr=0.02, momentum=0.95<br>Newton-Schulz iteration (5 steps)<br>dim scaling: √(d_out/d_in)<br><br>AdamW (embeddings/biases):<br>lr=3e-4, betas=(0.9,0.95)<br>weight_decay=1e-5<br><span style="color:var(--c-accent-infer)">0.1185 → 0.1211</span></div>
+        </div>
+        <div class="component highlight">
+          <div class="label">LR Schedule</div>
+          <div class="value">Warmup + Cosine Annealing<br><br>10% warmup: 1e-8 → lr<br>90% cosine: lr → 0<br><br>Total steps = epochs × batches<br>SequentialLR scheduler<br><br>batch_size = 768 (per GPU)</div>
+        </div>
+        <div class="component highlight">
+          <div class="label">Training Config</div>
+          <div class="value">epochs = 6-8<br>hidden = 512 or 1024<br>blocks = 8-24<br>heads = 8<br>dnn_hidden_multiplier = varies<br>feed_forward_multiplier = varies<br>dropout = 0.1-0.2<br>90/10 train/val split</div>
+        </div>
+      </div>
+
+      <div style="height: 10px;"></div>
+
+      <div class="inner-box">
+        <div class="ib-label">Scaling Results (Key Finding)</div>
+        <div class="ib-content">
+          <table class="ablation-table">
+            <tr><th>Config</th><th>Epochs</th><th>Layers</th><th>Hidden</th><th>Score</th></tr>
+            <tr><td>HSTU</td><td>6</td><td>8</td><td>512</td><td>0.1257</td></tr>
+            <tr><td>HSTU</td><td>6</td><td>24</td><td>512</td><td>0.1319</td></tr>
+            <tr><td>MoE</td><td>6</td><td>8</td><td>512 (64E-3K-1S)</td><td>0.1300</td></tr>
+            <tr><td class="positive">HSTU</td><td class="positive">6</td><td class="positive">12</td><td class="positive">1024</td><td class="positive">0.1371 (best)</td></tr>
+          </table>
+          <div style="margin-top:4px;font-size:9px;color:var(--c-accent-infer)">Key insight: width scaling (512→1024) >> depth scaling (8→24) >> MoE scaling</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CONNECTOR ===== -->
+    <div class="connector-down">
+      <svg viewBox="0 0 16 24" fill="none" stroke="#0f172a" stroke-width="1.5">
+        <line x1="8" y1="0" x2="8" y2="18"/><polyline points="3,14 8,20 13,14"/>
+      </svg>
+    </div>
+
+    <!-- ===== 7. INFERENCE PIPELINE ===== -->
+    <div class="section">
+      <div class="section-label infer">07 — INFERENCE PIPELINE (infer.py + train_infer.py)</div>
+
+      <div class="pipeline">
+        <div class="pipeline-stage" style="border-color: var(--c-accent-infer);">
+          <div class="stage-num" style="color: var(--c-accent-infer);">Phase 1</div>
+          <div class="stage-title">Dual-Path Recall</div>
+          <div class="stage-detail">
+            <b>A) ANN Recall:</b><br>
+            user_query = log_feats[:,-1,:]<br>
+            Scores = query · E_itemᵀ<br>
+            Top-K candidates<br>
+            <br>
+            <b>B) SID Beam Search:</b><br>
+            beamsearch_sid(log_feats)<br>
+            → Top-384 (sid1,sid2) pairs<br>
+            → reverse lookup → C_sid items
+          </div>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 20 20" fill="none" stroke="#64748b" stroke-width="1.5">
+            <line x1="0" y1="10" x2="14" y2="10"/><polyline points="10,5 16,10 10,15"/>
+          </svg>
+        </div>
+        <div class="pipeline-stage" style="border-color: var(--c-accent-infer);">
+          <div class="stage-num" style="color: var(--c-accent-infer);">Phase 2</div>
+          <div class="stage-title">Merge + Rerank</div>
+          <div class="stage-detail">
+            1. Merge ANN ∪ C_sid<br>
+            2. Filter history items (-inf)<br>
+            3. Filter cold-start items<br>
+            <br>
+            Sort merged candidates by<br>
+            InfoNCE similarity score<br>
+            → Top-10 final output<br>
+            <br>
+            History filter: +1.0%<br>
+            Cold filter: +0.02%
+          </div>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 20 20" fill="none" stroke="#64748b" stroke-width="1.5">
+            <line x1="0" y1="10" x2="14" y2="10"/><polyline points="10,5 16,10 10,15"/>
+          </svg>
+        </div>
+        <div class="pipeline-stage" style="border-color: var(--c-accent-dist);">
+          <div class="stage-num" style="color: var(--c-accent-dist);">Phase 3</div>
+          <div class="stage-title">Distributed Merge</div>
+          <div class="stage-detail">
+            k GPUs parallel inference<br>
+            Each shard: 1/k users<br>
+            → part_{shard_id}.pkl<br>
+            <br>
+            infer.py waits for all parts<br>
+            → merge → result.json<br>
+            <br>
+            3hr serial → minutes parallel<br>
+            + Ensemble voting (multi-model)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 8. DISTRIBUTED TRAINING ===== -->
+    <div class="section">
+      <div class="section-label dist">08 — DISTRIBUTED TRAINING (dataparallel.py — FedSGD)</div>
+
+      <div class="grid-2">
+        <div class="inner-box">
+          <div class="ib-label">FedSGD Architecture (No TCP)</div>
+          <div class="ib-content">
+            Constraint: TCP/IP disabled, no DDP/DeepSpeed<br>
+            Solution: Single-process, multi-thread, CUDA-only<br>
+            <br>
+            1. Master GPU (cuda:0) = Parameter Server<br>
+            2. Deep-copy model to each GPU<br>
+            3. Global batch → split → k micro-batches<br>
+            4. Parallel forward+backward on all GPUs<br>
+            5. Gather gradients to cuda:0<br>
+            6. Optimizer step ONLY on cuda:0<br>
+            7. Broadcast params to all replicas<br>
+            <br>
+            Optimizer state: 1 copy (not k copies)<br>
+            Async data transfer: non_blocking=True
+          </div>
+        </div>
+        <div class="inner-box">
+          <div class="ib-label">Data Preprocessing Pipeline</div>
+          <div class="ib-content">
+            <b>Offline:</b><br>
+            item_exposure_data.py → exposure stats per item<br>
+            timestamp_buckets.py → 8192 time buckets<br>
+            preprocess_batch.py → batch pickles<br>
+            <br>
+            <b>Online (dataset.py):</b><br>
+            JSONL + offset pkl → fast random access<br>
+            LogP computation: log(count/total)<br>
+            Percentile ranking per bucket<br>
+            Feature dropout (random zeroing)<br>
+            <br>
+            <b>PreprocessedDataLoader:</b><br>
+            Batch pickles → ThreadPoolExecutor loading<br>
+            Sliding window prefetch → ordered yield
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 9. ABLATION SUMMARY ===== -->
+    <div class="section">
+      <div class="section-label model">09 — KEY ABLATION RESULTS</div>
+
+      <table class="ablation-table">
+        <tr><th>Technique</th><th>Before</th><th>After</th><th>Delta</th></tr>
+        <tr><td>Remove User ID</td><td>0.1128</td><td>0.1136</td><td class="positive">+0.08%</td></tr>
+        <tr><td>Item ID Hash Compression</td><td>0.1198</td><td>0.1228</td><td class="positive">+2.9%</td></tr>
+        <tr><td>Asymmetric Activation (ReLU trick)</td><td>0.0967</td><td>0.0997</td><td class="positive">+3.1%</td></tr>
+        <tr><td>HSTU vs Transformer</td><td>0.0731</td><td>0.0755</td><td class="positive">+3.3%</td></tr>
+        <tr><td>RoPE Position Encoding</td><td>0.0763</td><td>0.0789</td><td class="positive">+3.3%</td></tr>
+        <tr><td>InfoNCE (cosine) vs BCE</td><td>0.0264</td><td>0.0430</td><td class="positive">+63%</td></tr>
+        <tr><td>LogQ Debiasing</td><td>0.0378</td><td>0.0949</td><td class="positive">+151%</td></tr>
+        <tr><td>Muon Optimizer</td><td>0.1185</td><td>0.1211</td><td class="positive">+2.2%</td></tr>
+        <tr><td>Next Action Type Masking</td><td>—</td><td>—</td><td class="positive">+0.2%</td></tr>
+        <tr><td>Absolute Time Features</td><td>—</td><td>—</td><td class="positive">+0.5%</td></tr>
+        <tr><td>History Filtering (inference)</td><td>0.1056</td><td>0.1151</td><td class="positive">+9.0%</td></tr>
+        <tr><td>Width Scaling 512→1024</td><td>0.1319</td><td>0.1371</td><td class="positive">+3.9%</td></tr>
+      </table>
+    </div>
+
+    <!-- ===== LEGEND ===== -->
+    <div class="section" style="border-top: 2px solid var(--c-text-main);">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-swatch feat"></div> Feature Engineering</div>
+        <div class="legend-item"><div class="legend-swatch model"></div> Model Architecture</div>
+        <div class="legend-item"><div class="legend-swatch moe"></div> HSTU / MoE Encoder</div>
+        <div class="legend-item"><div class="legend-swatch sid"></div> SID Prediction Head</div>
+        <div class="legend-item"><div class="legend-swatch loss"></div> Loss Functions</div>
+        <div class="legend-item"><div class="legend-swatch train"></div> Training Loop</div>
+        <div class="legend-item"><div class="legend-swatch infer"></div> Inference Pipeline</div>
+        <div class="legend-item"><div class="legend-swatch dist"></div> Distributed System</div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
