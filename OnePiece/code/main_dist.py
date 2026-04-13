@@ -164,7 +164,7 @@ def get_args():
     parser.add_argument('--user_id_exclude', action="store_true", default=True)
     parser.add_argument('--num_workers', default=32, type=int)
     # MMemb Feature ID
-    parser.add_argument('--mm_emb_id', nargs='+', default=['81'], type=str, choices=[str(s) for s in range(81, 87)])
+    parser.add_argument('--mm_emb_id', nargs='+', default=['81', '82'], type=str, choices=[str(s) for s in range(81, 87)])
     parser.add_argument('--mm_sid', nargs='+', default=['81'], type=str, choices=[str(s) for s in range(81, 87)])
 
     # 本地调试
