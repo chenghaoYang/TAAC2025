@@ -150,7 +150,6 @@ python3 -u main_dist.py \
     --mm_emb_id 81 82 \
     --single_device_batch_size 128 \
     --gradient_accumulation_steps 4 \
-    --sid \
     --num_epochs 8
 
 echo ""
