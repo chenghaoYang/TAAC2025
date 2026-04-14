@@ -538,7 +538,8 @@ def train(args, run_name="default_run"):
         except Exception:
             pass
 
-    model.pos_emb.weight.data[0, :] = 0
+    if hasattr(model, 'pos_emb'):
+        model.pos_emb.weight.data[0, :] = 0
     model.item_emb.weight.data[0, :] = 0
 
     for k in model.sparse_emb:
