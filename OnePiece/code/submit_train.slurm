@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:h100:1
-#SBATCH --mem=250G
+#SBATCH --mem=300G
 #SBATCH --time=24:00:00
 #SBATCH --output=/scratch/cy2668/TAAC2025/OnePiece/logs/slurm-%j.out
 #SBATCH --error=/scratch/cy2668/TAAC2025/OnePiece/logs/slurm-%j.err
@@ -142,12 +142,16 @@ pip install --trusted-host pypi.org \
 python3 -u item_exposure_data.py
 python3 -u timestamp_buckets.py
 
-# Train (single GPU, no MyDataParallel)
+# Train (single GPU)
 python3 -u main_dist.py \
     --use_my_dataparallel \
     --gpu_ids 0 \
     --num_workers 8 \
-    --mm_emb_id 81 82
+    --mm_emb_id 81 82 \
+    --single_device_batch_size 128 \
+    --gradient_accumulation_steps 4 \
+    --sid \
+    --num_epochs 8
 
 echo ""
 echo "=============================================="

@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import random
 
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)  # disabled: causes ~2x slowdown, only enable for debugging
 from torch.optim.lr_scheduler import LinearLR, SequentialLR, CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -486,7 +486,8 @@ def train(args, run_name="default_run"):
         print("使用原始DataLoader（未启用预处理）")
         train_loader = DataLoader(
             train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
-            collate_fn=dataset.collate_fn, prefetch_factor=8, persistent_workers=False, pin_memory=False
+            collate_fn=dataset.collate_fn, prefetch_factor=8, persistent_workers=False, pin_memory=False,
+            drop_last=True
         )
 
     # 验证集仍使用原始方式（因为验证集较小且不频繁使用）
