@@ -22,8 +22,8 @@ from sklearn.cluster import KMeans
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--checkpoint", type=str, default="")
+    parser.add_argument("--output_dir", type=str, default="")
     parser.add_argument("--n_clusters_l1", type=int, default=512)
     parser.add_argument("--n_clusters_l2", type=int, default=32)
     # Reuse main_dist.py's args so Dataset/Model init correctly
@@ -265,16 +265,12 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
 
 
 def main():
-    args = get_args()
-
-    checkpoint = args.checkpoint if hasattr(args, 'checkpoint') else None
-    # Use separate args for our script
-    import sys
+    # Phase 1: Extract our custom args (--checkpoint, --output_dir, --n_clusters_l1/l2)
+    # before calling get_args(), which would fail because those args aren't in its parser.
     ckpt_path = None
     output_dir = None
     n_l1 = 512
     n_l2 = 32
-    # Parse our specific args from argv
     remaining = []
     i = 1
     while i < len(sys.argv):
@@ -293,7 +289,7 @@ def main():
         print("Usage: generate_sid.py --checkpoint <path> --output_dir <dir>")
         sys.exit(1)
 
-    # Override sys.argv for argparse in get_args
+    # Phase 2: Parse remaining args through the standard argparse (mirrors main_dist.py args)
     sys.argv = [sys.argv[0]] + remaining
     args = get_args()
 
