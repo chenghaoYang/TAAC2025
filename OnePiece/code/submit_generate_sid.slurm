@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:h100:1
 #SBATCH --mem=100G
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=/scratch/cy2668/TAAC2025/OnePiece/logs/slurm-%j.out
 #SBATCH --error=/scratch/cy2668/TAAC2025/OnePiece/logs/slurm-%j.err
 

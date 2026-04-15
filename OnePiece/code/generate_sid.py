@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from sklearn.cluster import KMeans
+from sklearn.cluster import MiniBatchKMeans
 
 
 def get_args():
@@ -279,8 +279,8 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
     norms = np.maximum(norms, 1e-8)
     embeddings_norm = embeddings / norms
 
-    print("  Running L1 KMeans...")
-    kmeans_l1 = KMeans(n_clusters=n_clusters_l1, random_state=42, n_init=10, max_iter=300)
+    print("  Running L1 KMeans (MiniBatch)...")
+    kmeans_l1 = MiniBatchKMeans(n_clusters=n_clusters_l1, random_state=42, batch_size=8192, max_iter=100, n_init=3)
     sid1_labels = kmeans_l1.fit_predict(embeddings_norm)
     print(f"  L1 done. Unique clusters: {len(np.unique(sid1_labels))}")
 
@@ -295,7 +295,7 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
         if n_in_cluster <= n_clusters_l2:
             sid2_labels[mask] = np.arange(n_in_cluster)
         else:
-            kmeans_l2 = KMeans(n_clusters=n_clusters_l2, random_state=42, n_init=5, max_iter=200)
+            kmeans_l2 = MiniBatchKMeans(n_clusters=n_clusters_l2, random_state=42, batch_size=min(2048, n_in_cluster), max_iter=50, n_init=1)
             sid2_labels[mask] = kmeans_l2.fit_predict(cluster_embs)
 
         if (l1_id + 1) % 100 == 0:
