@@ -15,6 +15,12 @@ set -euo pipefail
 
 export RUNTIME_SCRIPT_DIR="/scratch/cy2668/TAAC2025/OnePiece/code"
 export USER_CACHE_PATH="/scratch/cy2668/TAAC2025/OnePiece/user_cache"
+
+if command -v module &>/dev/null; then
+    module purge 2>/dev/null || true
+    module load anaconda3/2025.06 2>/dev/null || true
+fi
+
 export PYTHONPATH="/scratch/cy2668/TAAC2025/pylibs:${RUNTIME_SCRIPT_DIR}:${PYTHONPATH:-}"
 
 echo "=============================================="
