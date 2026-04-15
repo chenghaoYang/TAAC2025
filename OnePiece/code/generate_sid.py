@@ -245,10 +245,12 @@ def extract_item_embeddings(args, checkpoint_path):
                 default_val = np.zeros(emb_dim, dtype=np.float32)
                 for i in range(B):
                     val = seq_feat_list[i][0].get(k, default_val)
-                    if isinstance(val, np.ndarray):
+                    if isinstance(val, torch.Tensor):
+                        val = val.numpy()
+                    if isinstance(val, np.ndarray) and val.ndim >= 1 and val.shape[0] >= emb_dim:
                         batch_data[i, 0] = val[:emb_dim]
-                    elif isinstance(val, torch.Tensor):
-                        batch_data[i, 0] = val.numpy()[:emb_dim]
+                    elif isinstance(val, np.ndarray) and val.ndim >= 1:
+                        batch_data[i, 0, :val.shape[0]] = val
                     else:
                         batch_data[i, 0] = default_val
                 seq_feat_dict[k] = torch.from_numpy(batch_data)
