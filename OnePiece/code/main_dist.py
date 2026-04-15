@@ -559,6 +559,17 @@ def train(args, run_name="default_run"):
             checkpoint = torch.load(ckpt_path, map_location=torch.device("cuda:0"))
             model.load_state_dict(checkpoint, strict=False)
 
+    # Load checkpoint for SID fine-tuning (Phase 3) or any resume
+    if args.state_dict_path and not args.reward_only:
+        print(f"Loading state_dict from {args.state_dict_path} ...")
+        checkpoint = torch.load(args.state_dict_path, map_location="cpu", weights_only=False)
+        missing, unexpected = model.load_state_dict(checkpoint, strict=False)
+        print(f"  Loaded. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
+        if missing:
+            print(f"  Missing (first 10): {missing[:10]}")
+        if unexpected:
+            print(f"  Unexpected (first 10): {unexpected[:10]}")
+
     # Wrap model with MyDataParallel if requested
     if args.use_my_dataparallel:
         if args.gpu_ids is None:
