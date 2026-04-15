@@ -42,32 +42,9 @@ def get_args():
 
 
 def load_mm_emb(emb_dir, mm_emb_ids):
-    """Load multimodal embeddings from pkl files."""
-    mm_embs = {}
-    for fid in mm_emb_ids:
-        # Try different naming conventions
-        candidates = [
-            emb_dir / f"emb_{fid}.pkl",
-            emb_dir / fid,
-        ]
-        # Also try globbing
-        for p in emb_dir.glob(f"*{fid}*"):
-            candidates.append(p)
-
-        loaded = False
-        for p in candidates:
-            if p.exists():
-                with open(p, "rb") as f:
-                    data = pickle.load(f)
-                if isinstance(data, dict):
-                    mm_embs[fid] = data
-                    loaded = True
-                    print(f"  Loaded mm_emb {fid}: {len(data)} items from {p.name}")
-                    break
-        if not loaded:
-            print(f"  WARNING: mm_emb {fid} not found, using zeros")
-            mm_embs[fid] = {}
-    return mm_embs
+    """Load multimodal embeddings using dataset.py's own loader."""
+    from dataset import load_mm_emb as dataset_load_mm_emb
+    return dataset_load_mm_emb(emb_dir, mm_emb_ids, debug=False)
 
 
 def build_item_features(args):
