@@ -22,6 +22,7 @@ from sklearn.cluster import KMeans
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="train")
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--output_dir", type=str, default="")
     parser.add_argument("--n_clusters_l1", type=int, default=512)
