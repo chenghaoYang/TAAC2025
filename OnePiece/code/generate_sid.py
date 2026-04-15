@@ -170,7 +170,8 @@ def extract_item_embeddings(args, checkpoint_path):
     print(f"  Hidden dim: {hidden_dim}")
 
     # Determine all feature keys the model expects
-    all_sparse_feats = list(feat_types.get('item_sparse', []))
+    # Note: model._init_feat_info merges context_item_sparse into ITEM_SPARSE_FEAT
+    all_sparse_feats = list(feat_types.get('item_sparse', [])) + list(feat_types.get('context_item_sparse', []))
     all_array_feats = list(feat_types.get('item_array', []))
     all_emb_feats = list(feat_types.get('item_emb', []))
 
