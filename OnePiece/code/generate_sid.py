@@ -2,15 +2,14 @@
 """
 Generate Semantic ID (SID) via hierarchical KMeans on item embeddings.
 
-Usage:
-    python3 generate_sid.py --checkpoint <path_to_model.pt> --output_dir <dir>
+Uses the trained model's feat2emb + itemdnn to extract item embeddings,
+then runs 2-level KMeans to produce (sid1, sid2) mapping.
 
-Produces:
-    <output_dir>/sid_81_82.pkl  — dict mapping item_id -> [sid1, sid2]
+Usage:
+    python3 generate_sid.py --checkpoint <path> --output_dir <dir>
 """
 
 import argparse
-import json
 import os
 import pickle
 import sys
@@ -23,203 +22,200 @@ from sklearn.cluster import KMeans
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to model.pt checkpoint")
-    parser.add_argument("--output_dir", type=str, required=True, help="Directory to save sid pkl")
-    parser.add_argument("--user_cache_path", type=str,
-                        default=os.environ.get("USER_CACHE_PATH", "/scratch/cy2668/TAAC2025/OnePiece/user_cache"))
-    parser.add_argument("--n_clusters_l1", type=int, default=512, help="Number of L1 clusters (sid1)")
-    parser.add_argument("--n_clusters_l2", type=int, default=32, help="Number of L2 clusters per L1 (sid2)")
-    parser.add_argument("--mm_emb_ids", type=str, nargs="+", default=["81", "82"])
+    parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--n_clusters_l1", type=int, default=512)
+    parser.add_argument("--n_clusters_l2", type=int, default=32)
+    # Reuse main_dist.py's args so Dataset/Model init correctly
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--single_device_batch_size", type=int, default=512)
+    parser.add_argument("--lr", type=float, default=0.004)
+    parser.add_argument("--maxlen", type=int, default=101)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
+    parser.add_argument("--similarity_function", type=str, default="cosine")
+    parser.add_argument("--clip_grad_norm", type=float, default=1.0)
+    parser.add_argument("--warmup_steps", type=int, default=2000)
+    parser.add_argument("--use_cosine_annealing", action="store_true", default=True)
+    parser.add_argument("--lr_eta_min", type=float, default=0.0)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--sparse_embedding", action="store_true", default=False)
+    parser.add_argument("--embedding_zero_init", action="store_true", default=True)
+    parser.add_argument("--bf16", action="store_true", default=True)
+    parser.add_argument("--pure_bf16", action="store_true", default=False)
+    parser.add_argument("--infonce", action="store_true", default=True)
+    parser.add_argument("--infonce_temp", type=float, default=0.02)
+    parser.add_argument("--learnable_temp", action="store_true", default=False)
+    parser.add_argument("--muon", action="store_true", default=True)
+    parser.add_argument("--muon_lr", type=float, default=0.02)
+    parser.add_argument("--muon_momentum", type=float, default=0.95)
+    parser.add_argument("--interest_k", type=int, default=1)
+    parser.add_argument("--use_multi_interest", action="store_true", default=False)
     parser.add_argument("--hidden_units", type=int, default=128)
-    parser.add_argument("--dnn_hidden_units", type=int, default=4)
+    parser.add_argument("--num_blocks", type=int, default=24)
+    parser.add_argument("--num_epochs", type=int, default=8)
+    parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--dropout_rate", type=float, default=0.2)
+    parser.add_argument("--l2_emb", type=float, default=0.0)
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--inference_only", action="store_true", default=True)
+    parser.add_argument("--state_dict_path", type=str, default=None)
+    parser.add_argument("--use_my_dataparallel", action="store_true", default=True)
+    parser.add_argument("--gpu_ids", type=int, nargs="+", default=[0])
+    parser.add_argument("--norm_first", action="store_true", default=True)
+    parser.add_argument("--rope", action="store_true", default=False)
+    parser.add_argument("--mm_emb_gate", action="store_true", default=False)
+    parser.add_argument("--log_interval", type=int, default=1)
+    parser.add_argument("--random_perturbation", action="store_true", default=False)
+    parser.add_argument("--random_perturbation_value", type=float, default=5e-3)
     parser.add_argument("--hash_emb_size", type=int, default=256)
-    parser.add_argument("--item_sparse_feats", type=str, nargs="+",
+    parser.add_argument("--timestamp_bucket_emb_size", type=int, default=128)
+    parser.add_argument("--infer_logq", action="store_true", default=False)
+    parser.add_argument("--use_hstu", action="store_true", default=True)
+    parser.add_argument("--hstu_rope", action="store_true", default=False)
+    parser.add_argument("--rms_norm", action="store_true", default=False)
+    parser.add_argument("--dnn_hidden_units", type=int, default=4)
+    parser.add_argument("--feed_forward_hidden_units", type=int, default=2)
+    parser.add_argument("--base_user_sparse", type=str, nargs="+",
+                        default=["103", "104", "105", "109"])
+    parser.add_argument("--base_item_sparse", type=str, nargs="+",
                         default=["100", "117", "118", "101", "102", "119", "120", "114", "112", "121", "115",
                                  "122", "116"])
-    parser.add_argument("--item_array_feats", type=str, nargs="+", default=["106", "107", "108", "110"])
-    parser.add_argument("--device", type=str, default="cuda")
-    return parser.parse_args()
+    parser.add_argument("--base_user_array", type=str, nargs="+", default=["106", "107", "108", "110"])
+    parser.add_argument("--user_sparse", type=str, nargs="+", default=None)
+    parser.add_argument("--item_sparse", type=str, nargs="+",
+                        default=["exposure_start_year", "exposure_start_month", "exposure_start_day",
+                                 "exposure_end_year", "exposure_end_month", "exposure_end_day"])
+    parser.add_argument("--user_array", type=str, nargs="+", default=None)
+    parser.add_argument("--item_array", type=str, nargs="+", default=None)
+    parser.add_argument("--user_continual", type=str, nargs="+", default=None)
+    parser.add_argument("--item_continual", type=str, nargs="+", default=None)
+    parser.add_argument("--context_item_sparse", type=str, nargs="+",
+                        default=["time_diff_day", "time_diff_hour", "time_diff_minute", "action_type",
+                                 "next_action_type", "timestamp_bucket_id", "hot_bucket_1000"])
+    parser.add_argument("--feature_dropout_list", type=str, nargs="+",
+                        default=["timestamp_bucket_id", "hot_bucket_1000"])
+    parser.add_argument("--feature_dropout_rate", type=float, default=0.5)
+    parser.add_argument("--bucket_sizes", type=int, nargs="+", default=[])
+    parser.add_argument("--user_id_exclude", action="store_true", default=True)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--mm_emb_id", type=str, nargs="+", default=["81", "82"])
+    parser.add_argument("--mm_sid", type=str, nargs="+", default=["81"])
+    parser.add_argument("--debug", action="store_true", default=False)
+    parser.add_argument("--test_train_valid_process", action="store_true", default=False)
+    parser.add_argument("--generate_sid", action="store_true", default=True)
+    parser.add_argument("--sid", action="store_true", default=False)
+    parser.add_argument("--sid_codebook_layer", type=int, default=2)
+    parser.add_argument("--sid_codebook_size", type=int, default=16384)
+    parser.add_argument("--mlp_layers", type=int, default=2)
+    parser.add_argument("--reward", action="store_true", default=False)
+    parser.add_argument("--reward_only", action="store_true", default=False)
+    parser.add_argument("--use_preprocessing", action="store_true", default=False)
+    parser.add_argument("--force_reprocess", action="store_true", default=False)
+    parser.add_argument("--train_infer_result_path", type=str, default="")
+    parser.add_argument("--save_infer_model", action="store_true", default=True)
+    parser.add_argument("--use_moe", action="store_true", default=False)
+    parser.add_argument("--moe_num_experts", type=int, default=64)
+    parser.add_argument("--moe_top_k", type=int, default=3)
+    parser.add_argument("--moe_intermediate_size", type=int, default=512)
+    parser.add_argument("--moe_load_balancing_alpha", type=float, default=0)
+    parser.add_argument("--moe_load_balancing_update_freq", type=int, default=1)
+    parser.add_argument("--moe_shared_expert_num", type=int, default=1)
+    parser.add_argument("--moe_use_sequence_aux_loss", action="store_true", default=True)
+    parser.add_argument("--moe_sequence_aux_loss_coeff", type=float, default=0.02)
+    parser.add_argument("--moe_dynamic_aux_loss", action="store_true", default=False)
+    parser.add_argument("--moe_aux_loss_adjust_rate", type=float, default=0.0001)
+    parser.add_argument("--moe_gini_target_min", type=float, default=0.09)
+    parser.add_argument("--moe_gini_target_max", type=float, default=0.31)
+    parser.add_argument("--moe_dynamic_aux_loss_start_step", type=int, default=700)
+    parser.add_argument("--beam_search_generate", action="store_true", default=False)
+    parser.add_argument("--beam_search_top_k", type=int, default=256)
+    parser.add_argument("--beam_search_beam_size", type=int, default=20)
+    parser.add_argument("--sid_resort", action="store_true", default=False)
+    parser.add_argument("--sid_path", type=str, default=None)
+    parser.add_argument("--sid_resort_topk", type=int, nargs="+", default=[32, 128, 256])
+    args = parser.parse_args()
+
+    # Set paths from env
+    args.batch_size = args.single_device_batch_size
+    args.log_path = os.environ.get("TRAIN_LOG_PATH", "/tmp")
+    args.tb_path = os.environ.get("TRAIN_TF_EVENTS_PATH", "/tmp")
+    args.data_path = os.environ.get("TRAIN_DATA_PATH", "/scratch/cy2668/TAAC2025/OnePiece/data")
+    args.ckpt_path = os.environ.get("TRAIN_CKPT_PATH", "/scratch/cy2668/TAAC2025/OnePiece/checkpoints")
+    args.user_cache_path = os.environ.get("USER_CACHE_PATH",
+                                          "/scratch/cy2668/TAAC2025/OnePiece/user_cache")
+    return args
 
 
-def load_mm_emb(emb_dir, mm_emb_ids):
-    """Load multimodal embeddings using dataset.py's own loader."""
-    from dataset import load_mm_emb as dataset_load_mm_emb
-    return dataset_load_mm_emb(emb_dir, mm_emb_ids, debug=False)
+def extract_item_embeddings(args, checkpoint_path):
+    """Load model + dataset, extract all item embeddings via model.feat2emb."""
+    from dataset import MyDataset
+    from model import BaselineModel
 
+    print("Loading dataset...")
+    dataset = MyDataset(args.data_path, args)
+    usernum, itemnum = dataset.usernum, dataset.itemnum
+    feat_statistics, feat_types = dataset.feat_statistics, dataset.feature_types
+    print(f"  Items: {itemnum}, Users: {usernum}")
 
-def build_item_features(args):
-    """Build feature matrix for all items."""
-    print("Loading item feature dict...")
-    with open(Path(args.user_cache_path, "item_feat_dict.json"), "r") as f:
-        item_feat_dict = json.load(f)
-    print(f"  Total items in feat dict: {len(item_feat_dict)}")
+    print(f"Loading model from {checkpoint_path}...")
+    model = BaselineModel(usernum, itemnum, feat_statistics, feat_types, args)
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    model.load_state_dict(ckpt, strict=False)
+    model = model.to(args.device)
+    model.eval()
+    print("  Model loaded.")
 
-    # Load mm embeddings
-    emb_dir = Path(args.user_cache_path) / "creative_emb"
-    print("Loading mm embeddings...")
-    mm_embs = load_mm_emb(emb_dir, args.mm_emb_ids)
+    hidden_dim = args.hidden_units * args.dnn_hidden_units
+    print(f"  Hidden dim: {hidden_dim}")
 
-    # Feature dimensions:
-    # item_id_emb: 32, hash_a: 256, hash_b: 256
-    # sparse feats: each hidden_units, array feats: each hidden_units
-    # mm_emb: each mapped through linear to hidden_units
-    hidden_dim = args.hidden_units
-    id_dim = 32
-    hash_dim = args.hash_emb_size * 2
-    sparse_dim = hidden_dim * len(args.item_sparse_feats)
-    array_dim = hidden_dim * len(args.item_array_feats)
-    # mm_emb dims will be handled by the model's emb_transform layers
-
-    total_sparse_dim = id_dim + hash_dim + sparse_dim + array_dim
-    # We'll compute mm_emb contribution separately via model
-
-    # Collect all item IDs (as ints), excluding 0
-    all_item_ids = sorted([int(k) for k in item_feat_dict.keys() if int(k) > 0])
-    max_item_id = max(all_item_ids)
-    print(f"  Item ID range: 1 .. {max_item_id}, total: {len(all_item_ids)}")
-
-    return all_item_ids, item_feat_dict, mm_embs
-
-
-def extract_item_embeddings_from_model(args):
-    """Load checkpoint and extract all item embeddings through itemdnn."""
-    print(f"\nLoading checkpoint: {args.checkpoint}")
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-
-    # Inspect checkpoint to find relevant keys
-    item_emb_weight = checkpoint.get("item_emb.weight", None)
-    if item_emb_weight is None:
-        print("ERROR: 'item_emb.weight' not found in checkpoint")
-        print("Available keys (first 20):", list(checkpoint.keys())[:20])
-        sys.exit(1)
-
-    num_items = item_emb_weight.shape[0] - 1  # minus padding
-    emb_dim = item_emb_weight.shape[1]
-    print(f"  item_emb: {num_items} items, dim={emb_dim}")
-    print(f"  itemdnn weight shape: {checkpoint['itemdnn.weight'].shape}")
-
-    # Build item feature tensor for all items
-    # Need to replicate feat2emb logic
-    with open(Path(args.user_cache_path, "item_feat_dict.json"), "r") as f:
-        item_feat_dict = json.load(f)
-
-    # Load mm_embs
-    emb_dir = Path(args.user_cache_path) / "creative_emb"
-    mm_embs = load_mm_emb(emb_dir, args.mm_emb_ids)
-
-    # Get sparse feat statistics from dataset to know vocab sizes
-    # We'll construct features manually
-    hidden_units = args.hidden_units
-
-    # Item id embedding
-    item_emb_layer = torch.nn.Embedding(num_items + 1, 32, padding_idx=0)
-    item_emb_layer.weight.data = checkpoint["item_emb.weight"]
-
-    # Hash embeddings
-    hash_prime_a = 2000003
-    hash_prime_b = 3000017
-    hash_emb_a = torch.nn.Embedding(hash_prime_a + 1, args.hash_emb_size, padding_idx=0)
-    hash_emb_b = torch.nn.Embedding(hash_prime_b + 1, args.hash_emb_size, padding_idx=0)
-    hash_emb_a.weight.data = checkpoint["item_hash_emb_a.weight"]
-    hash_emb_b.weight.data = checkpoint["item_hash_emb_b.weight"]
-
-    # Sparse embeddings for item features
-    sparse_emb_layers = {}
-    for k in args.item_sparse_feats + args.item_array_feats:
-        key = f"sparse_emb.{k}.weight"
-        if key in checkpoint:
-            vocab_size = checkpoint[key].shape[0]
-            sparse_emb_layers[k] = torch.nn.Embedding(vocab_size, hidden_units, padding_idx=0)
-            sparse_emb_layers[k].weight.data = checkpoint[key]
-        else:
-            print(f"  WARNING: sparse_emb key '{k}' not found in checkpoint")
-
-    # mm_emb transform layers
-    emb_transform_layers = {}
-    for k in args.mm_emb_ids:
-        key = f"emb_transform.{k}.weight"
-        if key in checkpoint:
-            in_dim = checkpoint[key].shape[1]
-            out_dim = checkpoint[key].shape[0]
-            emb_transform_layers[k] = torch.nn.Linear(in_dim, out_dim)
-            emb_transform_layers[k].weight.data = checkpoint[key]
-            if f"emb_transform.{k}.bias" in checkpoint:
-                emb_transform_layers[k].bias.data = checkpoint[f"emb_transform.{k}.bias"]
-        else:
-            print(f"  WARNING: emb_transform key '{k}' not found in checkpoint")
-
-    # Item DNN
-    itemdnn_weight = checkpoint["itemdnn.weight"]
-    itemdnn_bias = checkpoint["itemdnn.bias"]
-    hidden_dim = itemdnn_bias.shape[0]
-
-    # Process items in batches to avoid OOM
+    # Iterate over all item IDs
     batch_size = 4096
-    all_item_ids = sorted([int(k) for k in item_feat_dict.keys() if int(k) > 0])
     all_embeddings = []
+    all_item_ids = list(range(1, itemnum + 1))
 
-    print(f"\nExtracting embeddings for {len(all_item_ids)} items in batches of {batch_size}...")
+    print(f"\nExtracting embeddings for {len(all_item_ids)} items...")
 
-    for start in range(0, len(all_item_ids), batch_size):
-        batch_ids = all_item_ids[start:start + batch_size]
-        feat_list = []
+    with torch.no_grad():
+        for start in range(0, len(all_item_ids), batch_size):
+            batch_ids = all_item_ids[start:start + batch_size]
+            B = len(batch_ids)
 
-        # Item id embeddings
-        id_tensor = torch.tensor(batch_ids, dtype=torch.long)
-        feat_list.append(item_emb_layer(id_tensor))  # [B, 32]
+            # Build seq tensor: [B, 1] — treat each item as a sequence of length 1
+            seq = torch.tensor(batch_ids, dtype=torch.long, device=args.device).unsqueeze(1)
 
-        # Hash embeddings
-        feat_list.append(hash_emb_a(id_tensor % hash_prime_a))  # [B, 256]
-        feat_list.append(hash_emb_b(id_tensor % hash_prime_b))  # [B, 256]
+            # Build mask
+            mask = torch.ones(B, 1, dtype=torch.long, device=args.device)
 
-        # Sparse features
-        for k in args.item_sparse_feats:
-            if k in sparse_emb_layers:
-                vals = torch.tensor(
-                    [item_feat_dict.get(str(i), {}).get(k, 0) for i in batch_ids],
-                    dtype=torch.long
-                )
-                feat_list.append(sparse_emb_layers[k](vals))  # [B, hidden_units]
+            # Build feature dict — for each item, look up features from dataset
+            seq_feat = np.empty(B, dtype=object)
+            for i, item_id in enumerate(batch_ids):
+                item_key = dataset.indexer_i_rev.get(item_id)
+                if item_key and str(item_key) in dataset.item_feat_dict:
+                    feat = dataset.item_feat_dict[str(item_key)]
+                else:
+                    feat = {}
+                # Fill mm_emb
+                filled_feat = {}
+                for fid in args.mm_emb_id:
+                    item_str = str(item_key) if item_key else ""
+                    if item_key and item_str in dataset.mm_emb_dict.get(fid, {}):
+                        filled_feat[fid] = dataset.mm_emb_dict[fid][item_str]
+                    elif item_key and item_key in dataset.mm_emb_dict.get(fid, {}):
+                        filled_feat[fid] = dataset.mm_emb_dict[fid][item_key]
+                filled_feat.update(feat)
+                seq_feat[i] = filled_feat
 
-        # Array features (sum over last dim)
-        for k in args.item_array_feats:
-            if k in sparse_emb_layers:
-                vals = torch.tensor(
-                    [item_feat_dict.get(str(i), {}).get(k, [0]) for i in batch_ids],
-                    dtype=torch.long
-                )
-                if vals.dim() == 1:
-                    vals = vals.unsqueeze(1)
-                feat_list.append(sparse_emb_layers[k](vals).sum(dim=1))  # [B, hidden_units]
+            # Use model's feat2emb (include_user=False for pure item embedding)
+            seq_embs = model.feat2emb(seq, seq_feat, mask=mask, include_user=False)
+            # seq_embs: [B, 1, hidden_dim] — already through itemdnn + relu
+            item_embs = seq_embs.squeeze(1).cpu().numpy()  # [B, hidden_dim]
+            all_embeddings.append(item_embs)
 
-        # mm_emb features (through transform)
-        for k in args.mm_emb_ids:
-            if k in emb_transform_layers:
-                emb_data = mm_embs.get(k, {})
-                mm_vals = []
-                for i in batch_ids:
-                    if str(i) in emb_data:
-                        v = emb_data[str(i)]
-                    elif i in emb_data:
-                        v = emb_data[i]
-                    else:
-                        v = np.zeros(emb_transform_layers[k].weight.shape[1], dtype=np.float32)
-                    mm_vals.append(v)
-                mm_tensor = torch.tensor(np.array(mm_vals), dtype=torch.float32)
-                feat_list.append(emb_transform_layers[k](mm_tensor))  # [B, hidden_units]
-
-        # Concatenate and pass through itemdnn
-        all_feats = torch.cat(feat_list, dim=-1)  # [B, total_dim]
-        item_embs = torch.relu(all_feats @ itemdnn_weight.t() + itemdnn_bias)  # [B, hidden_dim]
-
-        all_embeddings.append(item_embs.detach().cpu().numpy())
-
-        if (start // batch_size) % 50 == 0:
-            print(f"  Processed {start + len(batch_ids)} / {len(all_item_ids)} items")
+            if (start // batch_size) % 100 == 0:
+                print(f"  Processed {start + B} / {len(all_item_ids)}")
 
     all_embeddings = np.concatenate(all_embeddings, axis=0)
-    print(f"  Done. Embedding shape: {all_embeddings.shape}")
-
+    print(f"  Done. Shape: {all_embeddings.shape}")
     return all_item_ids, all_embeddings
 
 
@@ -228,18 +224,15 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
     print(f"\nRunning hierarchical KMeans...")
     print(f"  L1 clusters: {n_clusters_l1}, L2 clusters per L1: {n_clusters_l2}")
 
-    # Normalize embeddings for better clustering
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
     norms = np.maximum(norms, 1e-8)
     embeddings_norm = embeddings / norms
 
-    # L1 KMeans
     print("  Running L1 KMeans...")
     kmeans_l1 = KMeans(n_clusters=n_clusters_l1, random_state=42, n_init=10, max_iter=300)
     sid1_labels = kmeans_l1.fit_predict(embeddings_norm)
     print(f"  L1 done. Unique clusters: {len(np.unique(sid1_labels))}")
 
-    # L2 KMeans within each L1 cluster
     print("  Running L2 KMeans within each L1 cluster...")
     sid2_labels = np.zeros(len(item_ids), dtype=np.int32)
 
@@ -249,7 +242,6 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
         n_in_cluster = cluster_embs.shape[0]
 
         if n_in_cluster <= n_clusters_l2:
-            # Fewer items than L2 clusters — assign each item a unique L2
             sid2_labels[mask] = np.arange(n_in_cluster)
         else:
             kmeans_l2 = KMeans(n_clusters=n_clusters_l2, random_state=42, n_init=5, max_iter=200)
@@ -260,12 +252,10 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
 
     print("  L2 done.")
 
-    # Build SID mapping: item_id -> [sid1, sid2]
     sid_map = {}
     for idx, item_id in enumerate(item_ids):
         sid_map[item_id] = [int(sid1_labels[idx]), int(sid2_labels[idx])]
 
-    # Stats
     unique_sids = set(tuple(v) for v in sid_map.values())
     print(f"\n  Total items: {len(sid_map)}")
     print(f"  Unique (sid1, sid2) pairs: {len(unique_sids)}")
@@ -277,28 +267,52 @@ def hierarchical_kmeans(item_ids, embeddings, n_clusters_l1, n_clusters_l2):
 def main():
     args = get_args()
 
-    # Step 1: Extract item embeddings from model
-    item_ids, embeddings = extract_item_embeddings_from_model(args)
+    checkpoint = args.checkpoint if hasattr(args, 'checkpoint') else None
+    # Use separate args for our script
+    import sys
+    ckpt_path = None
+    output_dir = None
+    n_l1 = 512
+    n_l2 = 32
+    # Parse our specific args from argv
+    remaining = []
+    i = 1
+    while i < len(sys.argv):
+        if sys.argv[i] == '--checkpoint' and i + 1 < len(sys.argv):
+            ckpt_path = sys.argv[i + 1]; i += 2
+        elif sys.argv[i] == '--output_dir' and i + 1 < len(sys.argv):
+            output_dir = sys.argv[i + 1]; i += 2
+        elif sys.argv[i] == '--n_clusters_l1' and i + 1 < len(sys.argv):
+            n_l1 = int(sys.argv[i + 1]); i += 2
+        elif sys.argv[i] == '--n_clusters_l2' and i + 1 < len(sys.argv):
+            n_l2 = int(sys.argv[i + 1]); i += 2
+        else:
+            remaining.append(sys.argv[i]); i += 1
+
+    if ckpt_path is None or output_dir is None:
+        print("Usage: generate_sid.py --checkpoint <path> --output_dir <dir>")
+        sys.exit(1)
+
+    # Override sys.argv for argparse in get_args
+    sys.argv = [sys.argv[0]] + remaining
+    args = get_args()
+
+    # Step 1: Extract item embeddings
+    item_ids, embeddings = extract_item_embeddings(args, ckpt_path)
 
     # Step 2: Hierarchical KMeans
-    sid_map = hierarchical_kmeans(
-        item_ids, embeddings,
-        n_clusters_l1=args.n_clusters_l1,
-        n_clusters_l2=args.n_clusters_l2,
-    )
+    sid_map = hierarchical_kmeans(item_ids, embeddings, n_l1, n_l2)
 
     # Step 3: Save
-    os.makedirs(args.output_dir, exist_ok=True)
-    mm_suffix = "_".join(args.mm_emb_ids)
-    output_path = Path(args.output_dir) / f"sid_{mm_suffix}.pkl"
+    os.makedirs(output_dir, exist_ok=True)
+    mm_suffix = "_".join(args.mm_emb_id)
+    output_path = Path(output_dir) / f"sid_{mm_suffix}.pkl"
 
     with open(output_path, "wb") as f:
         pickle.dump(sid_map, f)
 
     print(f"\nSID mapping saved to: {output_path}")
     print(f"  Total items: {len(sid_map)}")
-
-    # Preview
     sample_keys = list(sid_map.keys())[:5]
     for k in sample_keys:
         print(f"  Item {k}: sid={sid_map[k]}")
