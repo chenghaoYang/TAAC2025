@@ -75,6 +75,7 @@ python3 -u main_dist.py \
     --gradient_accumulation_steps 4 \
     --num_epochs 8 \
     --sid \
+    --mm_sid 81 82 \
     --state_dict_path "${CKPT}"
 
 echo ""
