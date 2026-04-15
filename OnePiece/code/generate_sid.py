@@ -169,6 +169,11 @@ def extract_item_embeddings(args, checkpoint_path):
     hidden_dim = args.hidden_units * args.dnn_hidden_units
     print(f"  Hidden dim: {hidden_dim}")
 
+    # Determine all feature keys the model expects
+    all_sparse_feats = list(feat_types.get('item_sparse', []))
+    all_array_feats = list(feat_types.get('item_array', []))
+    all_emb_feats = list(feat_types.get('item_emb', []))
+
     # Iterate over all item IDs
     batch_size = 4096
     all_embeddings = []
@@ -187,27 +192,69 @@ def extract_item_embeddings(args, checkpoint_path):
             # Build mask
             mask = torch.ones(B, 1, dtype=torch.long, device=args.device)
 
-            # Build feature dict — for each item, look up features from dataset
-            seq_feat = np.empty(B, dtype=object)
-            for i, item_id in enumerate(batch_ids):
+            # Step 1: Build seq_feat as list-of-list-of-dicts (same format as dataset.__getitem__)
+            seq_feat_list = []
+            for item_id in batch_ids:
                 item_key = dataset.indexer_i_rev.get(item_id)
-                if item_key and str(item_key) in dataset.item_feat_dict:
-                    feat = dataset.item_feat_dict[str(item_key)]
-                else:
-                    feat = {}
-                # Fill mm_emb
-                filled_feat = {}
-                for fid in args.mm_emb_id:
-                    item_str = str(item_key) if item_key else ""
-                    if item_key and item_str in dataset.mm_emb_dict.get(fid, {}):
-                        filled_feat[fid] = dataset.mm_emb_dict[fid][item_str]
-                    elif item_key and item_key in dataset.mm_emb_dict.get(fid, {}):
-                        filled_feat[fid] = dataset.mm_emb_dict[fid][item_key]
-                filled_feat.update(feat)
-                seq_feat[i] = filled_feat
+                feat = {}
+                if item_key:
+                    raw_feat = dataset.item_feat_dict.get(str(item_key), {})
+                    feat.update(raw_feat)
+                    # Fill mm_emb
+                    for fid in args.mm_emb_id:
+                        mm_dict = dataset.mm_emb_dict.get(fid, {})
+                        item_str = str(item_key)
+                        if item_str in mm_dict:
+                            feat[fid] = mm_dict[item_str]
+                        elif item_key in mm_dict:
+                            feat[fid] = mm_dict[item_key]
+                # Wrap in list for seq_len=1
+                seq_feat_list.append([feat])
+
+            # Step 2: Convert to dict-of-tensors (same as dataset.collate_fn)
+            seq_feat_dict = {}
+
+            # Sparse features
+            for k in all_sparse_feats:
+                batch_data = np.zeros((B, 1), dtype=np.int64)
+                default_val = dataset.feature_default_value.get(k, 0)
+                for i in range(B):
+                    batch_data[i, 0] = seq_feat_list[i][0].get(k, default_val)
+                seq_feat_dict[k] = torch.from_numpy(batch_data)
+
+            # Array features
+            for k in all_array_feats:
+                max_arr_len = 0
+                for i in range(B):
+                    val = seq_feat_list[i][0].get(k, [])
+                    if val:
+                        max_arr_len = max(max_arr_len, len(val))
+                max_arr_len = max(max_arr_len, 1)
+                batch_data = np.zeros((B, 1, max_arr_len), dtype=np.int64)
+                for i in range(B):
+                    val = seq_feat_list[i][0].get(k, [])
+                    if val:
+                        actual_len = min(len(val), max_arr_len)
+                        batch_data[i, 0, :actual_len] = val[:actual_len]
+                seq_feat_dict[k] = torch.from_numpy(batch_data)
+
+            # Embedding features (mm_emb)
+            for k in all_emb_feats:
+                emb_dim = dataset.feature_default_value[k].shape[0]
+                batch_data = np.zeros((B, 1, emb_dim), dtype=np.float32)
+                default_val = np.zeros(emb_dim, dtype=np.float32)
+                for i in range(B):
+                    val = seq_feat_list[i][0].get(k, default_val)
+                    if isinstance(val, np.ndarray):
+                        batch_data[i, 0] = val[:emb_dim]
+                    elif isinstance(val, torch.Tensor):
+                        batch_data[i, 0] = val.numpy()[:emb_dim]
+                    else:
+                        batch_data[i, 0] = default_val
+                seq_feat_dict[k] = torch.from_numpy(batch_data)
 
             # Use model's feat2emb (include_user=False for pure item embedding)
-            seq_embs = model.feat2emb(seq, seq_feat, mask=mask, include_user=False)
+            seq_embs = model.feat2emb(seq, seq_feat_dict, mask=mask, include_user=False)
             # seq_embs: [B, 1, hidden_dim] — already through itemdnn + relu
             item_embs = seq_embs.squeeze(1).cpu().numpy()  # [B, hidden_dim]
             all_embeddings.append(item_embs)
